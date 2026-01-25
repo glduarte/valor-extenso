@@ -1,20 +1,23 @@
-#include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "vw.h"
+#include "mutable_string.h"
 
-uint8_t count_digits(uint64_t v) {
-  uint8_t c = 0;
-  while (v > 0) {
-    v = v / 10;
-    c++;
-  }
-  return c;
+static uint8_t count_digits(uint64_t v) {
+    if (v == 0) return 1;
+
+    uint8_t c = 0;
+    while (v > 0) {
+	v = v / 10;
+	c++;
+    }
+    return c;
 }
 
-uint8_t has_connective(char *s) {
+static uint8_t has_connective(char *s) {
   size_t i = 1;
   while (s[i] != '\0') {
     if (s[i] == 'e' && s[i - 1] == ' ' && s[i + 1] == ' ')
@@ -24,79 +27,77 @@ uint8_t has_connective(char *s) {
   return 0;
 }
 
-char *convert_block(int block) {
+static int convert_block(int block, Mutable_String *out) {
   if (block == 0)
-    return NULL;
-
-  char *s = (char *)malloc(sizeof(char) * 256);
-  if (s == NULL)
-    return NULL;
-
-  s[0] = '\0';
+    return 0;
 
   if (block == 100) {
-    strcat(s, "cem");
-    return s;
+    mstr_append(out, "cem");
+    return 0;
   }
-
 
   int hundred = block / 100;
   int rest = block % 100;
 
   if (hundred > 0) {
-    strcat(s, hundreds[hundred]);
+      mstr_append(out, hundreds[hundred]);
   }
 
   if (rest == 0)
-    return s;
+    return 0;
   else if (rest >= 1 && rest <= 19) {
-    if (hundred > 0)
-      strcat(s, " e ");
-    strcat(s, units[rest]);
+    if (hundred > 0) mstr_append(out, " e ");
+    mstr_append(out, units[rest]);
   } else {
     int dozen = rest / 10;
     int unit = rest % 10;
 
     if (hundred > 0)
-      strcat(s, " e ");
-    strcat(s, dozens[dozen]);
+      mstr_append(out, " e ");
+    mstr_append(out, dozens[dozen]);
 
     if (unit > 0)
-      strcat(s, " e ");
-    strcat(s, units[unit]);
+      mstr_append(out, " e ");
+    mstr_append(out, units[unit]);
   }
 
-  return s;
+  return 0;
 }
 
-void join_blocks(char **blocks, size_t blocks_size, uint8_t is_negative,
-                  char *dest) {
+static int join_blocks(char **blocks, size_t blocks_size, uint8_t is_negative,
+                  Mutable_String *out) {
   size_t j = blocks_size;
   do {
     j--;
     if (j < (blocks_size - 1)) {
-      strcat(dest, (j == 0 && (has_connective(blocks[j]) == 0) ? " e " : ", "));
+	mstr_append(out, (j == 0 && (has_connective(blocks[j]) == 0) ? " e " : ", "));
     }
     if (j == (blocks_size - 1)) {
       if (is_negative == 1)
-        strcat(dest, "Menos ");
+	mstr_append(out, "Menos ");
       else
         blocks[j][0] -= 32;
     };
 
-    strcat(dest, blocks[j]);
-
+    mstr_append(out, blocks[j]);
   } while (j > 0);
+  
+  return 0;
+}
 
-  strcat(dest, "\0");
+void free_blocks(char **blocks, size_t blocks_size) {
+    for (size_t i = 0; i < blocks_size; i++) {
+	free(blocks[i]);
+    }
+    free(blocks);
 }
 
 char *value_into_words(int64_t v) {
-  char *final_str = (char *)malloc(sizeof(char) * 512);
-  if (final_str == NULL)
-    return NULL;
+  int status_code = 0;
 
-  final_str[0] = '\0';
+  Mutable_String mstr;
+  status_code = mstr_init(&mstr);
+  if (status_code == -1) return NULL;
 
   uint8_t is_negative = 0;
 
@@ -106,8 +107,8 @@ char *value_into_words(int64_t v) {
   }
 
   if (v == 0) {
-    strcpy(final_str, "Zero");
-    return final_str;
+      mstr_append(&mstr, "Zero");
+      return mstr.buf;
   }
 
   uint8_t digits = count_digits(v);
@@ -115,34 +116,49 @@ char *value_into_words(int64_t v) {
   // mUCQdUXHRUeP
   size_t blocks_quantity = (digits + 2) / 3;
 
-  char **blocks = (char **)malloc(blocks_quantity * sizeof(char *));
-  int8_t bi = 0;
+  char **blocks = calloc(blocks_quantity, sizeof(char *));
+  if (blocks == NULL) { 
+      mstr_destroy(&mstr);
+      return NULL;
+  }
+
+  size_t bi = 0;
 
   for (size_t i = 0; i < blocks_quantity; i++) {
     uint16_t block = v % 1000;
     v = v / 1000;
-    char *s = malloc(1);
+    Mutable_String s;
+    status_code = mstr_init(&s);
+    if (status_code == -1) {
+	mstr_destroy(&mstr);
+	free_blocks(blocks, bi);
+	return NULL;
+    }
     if (block != 1 || i != 1) {
-	s = convert_block(block);
-	if (s == NULL)
-	    continue;
+      convert_block(block, &s);
 
-	if (i > 0) {
-	    strcat(s, " ");
-	}
+      if (block == 0) {
+	  mstr_destroy(&s);
+	  continue;
+      }
+
+      if (i > 0) {
+	  mstr_append(&s, " ");
+      }
     }
 
     if (block > 1)
-      strcat(s, plural_scales[i]);
+	mstr_append(&s, plural_scales[i]);
     else
-      strcat(s, scales[i]);
+	mstr_append(&s, scales[i]);
 
-    blocks[bi] = s;
+    blocks[bi] = s.buf;
     bi++;
   }
 
-  join_blocks(blocks, bi, is_negative, final_str);
+  join_blocks(blocks, bi, is_negative, &mstr);
 
-  return final_str;
+  free_blocks(blocks, bi);
+
+  return mstr.buf;
 }
-
