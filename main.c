@@ -6,7 +6,7 @@
 int main() {
   char *ans[12] = {};
 
-  ans[0] =  value_into_words(0);
+  ans[0] = value_into_words(0);
   ans[1] = value_into_words(10);
   ans[2] = value_into_words(15);
   ans[3] = value_into_words(100);
@@ -19,9 +19,9 @@ int main() {
   ans[10] = value_into_words(10000000000);
   ans[11] = value_into_words(100000000000);
 
-  for(size_t i = 0; i < 12; i++) {
-      printf("%s\n", ans[i]);
-      free(ans[i]);
+  for (size_t i = 0; i < 12; i++) {
+    printf("%s\n", ans[i]);
+    free(ans[i]);
   }
 
   return EXIT_SUCCESS;
